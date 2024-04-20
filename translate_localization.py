@@ -25,14 +25,20 @@ def get_config():
     	from translate_info import APP_CONTEXT as context_from_file
     except ImportError:
         context_from_file = None
+        
+    try:
+    	from translate_info import CHATGPT_MODEL as chatgpt_model_from_file
+    except ImportError:
+        chatgpt_model_from_file = None
 
     # Fetch token from environment if not found in translate_info.py
     token = token_from_file or os.getenv("CHATGPT_TOKEN")
+    chatgpt_model = chatgpt_model_from_file or "gpt-3.5-turbo"
     context = context_from_file
 
-    return token, context
+    return token, chatgpt_model, context
 
-CHATGPT_TOKEN, APP_CONTEXT = get_config()
+CHATGPT_TOKEN, CHATGPT_MODEL, APP_CONTEXT = get_config()
 
 TRANSLATION_PREFIX = "T: "
 
@@ -41,26 +47,41 @@ if CHATGPT_TOKEN is None:
     sys.exit(1)
 
 if len(sys.argv) < 2:
-    print("Usage: python translate_localization.py <language_code> [Localizable.xcstrings path]")
+    print("Usage: python translate_localization.py <language_code> [Localizable.xcstrings path] [max attempts]")
     sys.exit(1)
     
-CHATGPT_MODEL = "gpt-3.5-turbo"
+attempt_found = False
+if len(sys.argv) > 3:
+	max_attempts_input = int(sys.argv[3])
+	attempt_found = True
+if len(sys.argv) > 2:
+    try:
+        max_attempts_input = int(sys.argv[2])
+        attempt_found = True
+    except ValueError:
+        max_attempts_input = None
+        attempt_found = False
+else:
+    max_attempts_input = False
+    
+max_attempts = max_attempts_input or 5
 target_language = sys.argv[1]  # The language code is the first argument
-print("Language code set to:", target_language)
+print("")
 
 # Check if the path to Localizable.xcstrings is provided as the second argument
-if len(sys.argv) > 2:
+if len(sys.argv) > 2 and not attempt_found:
     localizable_file = sys.argv[2]
 else:
     # Search for an Localizable.xcstrings file in the current directory and its subdirectories
     localizables = glob.glob("**/Localizable.xcstrings", recursive=True)
-    if localizables:
+    if len(localizables) > 0:
         localizable_file = localizables[0]  # Take the first Localizable.xcstrings file found
     else:
         print("Error: No Localizable.xcstrings found in the currenty directory and its subdirectories")
         sys.exit(1)
 
-print("Using Localizable.xcstrings:", localizable_file)
+print("")
+print("*String Catalog set*:", localizable_file)
 
 class Translatable:
 
@@ -109,8 +130,16 @@ class Translatable:
 
 def main():
 
-    print("Warning: This script add the translations in-place, i.e. modify the original provided file!")
-    print("If you don't have a version control system, this is not recommended!\n")
+
+    with open(localizable_file, "r") as f:
+        loc = json.loads(f.read())
+    
+    source_lang = loc["sourceLanguage"]
+    
+    print("*Source language:*", source_lang, "target langugage", target_language)
+    
+    print("*Warning*: This script add the translations in-place, i.e. modify the original provided file!")
+    print("*Warning*: If you don't have a version control system, this is not recommended!\n")
     answer = input("Please type 'yes' to continue or any other key to abort. ")
     
     if answer != "yes":
@@ -118,13 +147,6 @@ def main():
         return
     
     print("")
-
-    with open(localizable_file, "r") as f:
-        loc = json.loads(f.read())
-    
-    source_lang = loc["sourceLanguage"]
-    
-    print("Source language:", source_lang, "target langugage", target_language)
     
     strings = loc["strings"]
     strings_objects: Dict[str, Translatable] = {}
@@ -161,7 +183,7 @@ def main():
 
     ## send to chatGPT
     
-    print("Init", CHATGPT_MODEL, "with token:", CHATGPT_TOKEN)
+    print("*Init*", CHATGPT_MODEL, "with token:", CHATGPT_TOKEN, "max attempts:", max_attempts)
 
     cpt = ChatGPT(CHATGPT_TOKEN, model=CHATGPT_MODEL)
 
@@ -185,11 +207,13 @@ def main():
             valid = len(non_empty_lines) == query_length
 
             if not valid:
-                print("query_length:", query_length)
-                print("------- lines ---------", len(lines))
-                print(lines)
-                print("------- non empty lines ---------", len(non_empty_lines))
-                print(non_empty_lines)
+                print("Invalid response retrying")
+            	#print("query_length:", query_length)
+                #print("------- lines ---------", len(lines))
+                #print(lines)
+                #print("------- non empty lines ---------", len(non_empty_lines))
+                #print(non_empty_lines)
+                #print("")
 
             return valid
             
@@ -208,7 +232,7 @@ def main():
         if APP_CONTEXT:
         	info = info + "\n" + APP_CONTEXT
 
-        response = cpt.complete_query(info, query, is_response_valid_callback)
+        response = cpt.complete_query(info, query, is_response_valid_callback, max_attempts)
         full_response += response + "\n"
 
 

@@ -27,7 +27,7 @@ class ChatGPT:
         self.client = openai.OpenAI(api_key=openai_token)  # Initialize the client
 
 
-    def complete_query(self, system_command: str, user_input: str, is_valid_callback: Callable[[str], bool] = None, max_attempts: int = 2) -> str:
+    def complete_query(self, system_command: str, user_input: str, is_valid_callback: Callable[[str], bool] = None, max_attempts: int = 3) -> str:
         """
         Method takes a system_command and user_input and prompts ChatGPT for a
         response. Response is checked in several ways to make sure it's valid.
@@ -75,7 +75,7 @@ class ChatGPT:
                 continue
                 
             message = response.choices[0].message.content
-            print("response" + message)
+            print(message)
             with open(f"queries/{date_str}_3_api-response.txt", "w") as f:
                 f.write(json.dumps(message, indent=4))
 
@@ -94,4 +94,5 @@ class ChatGPT:
 
             return response_text
         
-        raise RuntimeError(f"Error, could not get a valid response after {max_attempts} tries.")
+        raise RuntimeError(f"Error, could not get a valid response after {max_attempts} tries. You can try increasing max attempts which may resolve this issue.")
+        

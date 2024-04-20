@@ -30,6 +30,8 @@ In the root of this repository, create a file called `translate_info.py` which c
 ```python
 CHATGPT_TOKEN = "put the token from OpenAI here"
 
+CHATGPT_MODEL = "gpt-4" # optional
+
 APP_CONTEXT = "This is my App, here is a summary what it does." # optional
 ```
 
@@ -69,8 +71,9 @@ You have can either put `chat_gpt_interface.py` & `translate_localization.py` to
 Run the script `translate_localizations.py` which will change the `Localizable.xcstrings` to add the terms and sentences for the new language. 
 **Make sure to your have a restoreable backup of this file.**
 
-Example translating to Latin American Spanish in project folder:
+Example translating to Latin American Spanish in project folder with max_attemps set to 10:
 
 ```bash
-python3 translate_localization.py es-419
+python3 translate_localization.py es-419 10
 ```
+*default max attemps are set to 5, but you can increase it if you have attempt related errors*
