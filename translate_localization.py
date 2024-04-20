@@ -34,6 +34,8 @@ def get_config():
 
 CHATGPT_TOKEN, APP_CONTEXT = get_config()
 
+TRANSLATION_PREFIX = "T: "
+
 if CHATGPT_TOKEN is None:
     print("Usage: You have to set a CHATGPT_TOKEN environment var or provide a translate_info.py in the same folder with a CHATGPT_TOKEN constant.")
     sys.exit(1)
@@ -42,6 +44,7 @@ if len(sys.argv) < 2:
     print("Usage: python translate_localization.py <language_code> [Localizable.xcstrings path]")
     sys.exit(1)
     
+CHATGPT_MODEL = "gpt-3.5-turbo"
 target_language = sys.argv[1]  # The language code is the first argument
 print("Language code set to:", target_language)
 
@@ -75,16 +78,16 @@ class Translatable:
         query = f"key: {self.key}\n"
         comment = self.info_dict["comment"] if "comment" in self.info_dict else "No comment provided."
         query += f"comment: {comment}\n"
-        query += "translation: \n"
+        query += TRANSLATION_PREFIX + "\n"
         return query
 
     def parse_gpt_response(self, gpt_response: str, overwrite=False, for_language=target_language) -> bool:
         try:
             translation = gpt_response
-            if not translation.startswith("translation: "):
+            if not translation.startswith(TRANSLATION_PREFIX):
                 return False
             
-            translation = translation[len("translation: "):]
+            translation = translation[len(TRANSLATION_PREFIX):]
 
             localizations_dict_update = {
                 for_language: {
@@ -109,17 +112,19 @@ def main():
     print("Warning: This script add the translations in-place, i.e. modify the original provided file!")
     print("If you don't have a version control system, this is not recommended!\n")
     answer = input("Please type 'yes' to continue or any other key to abort. ")
+    
     if answer != "yes":
-        print("\nAborting.")
+        print("\n*Aborted*")
         return
     
+    print("")
 
     with open(localizable_file, "r") as f:
         loc = json.loads(f.read())
     
     source_lang = loc["sourceLanguage"]
     
-    print("Source language found: " + source_lang)
+    print("Source language:", source_lang, "target langugage", target_language)
     
     strings = loc["strings"]
     strings_objects: Dict[str, Translatable] = {}
@@ -156,17 +161,17 @@ def main():
 
     ## send to chatGPT
     
-    print("Init ChatGPT with token: ", CHATGPT_TOKEN)
+    print("Init", CHATGPT_MODEL, "with token:", CHATGPT_TOKEN)
 
-    cpt = ChatGPT(CHATGPT_TOKEN, model="gpt-3.5-turbo")
+    cpt = ChatGPT(CHATGPT_TOKEN, model=CHATGPT_MODEL)
 
-    max_query_length = 30
+    max_query_length = 100
     full_response = ""
 
     for i in range(0, len(query_lines)-1, max_query_length):
 
         query_idx = int(i/max_query_length + 1)
-        print(f"running gpt query {query_idx}")
+        print(f"*Running query {query_idx}*\n")
 
         query = query_lines[i: i+max_query_length]
         query_length = len(query)
@@ -188,14 +193,16 @@ def main():
 
             return valid
             
-        info = "I want you to translate some text from " + source_lang  +  " to " + target_language + ". " + """
-        This text will be used to offer an iOS app in different languages.
+        info = "I want you to translate some text from IETF " + source_lang  +  " to " + target_language + ". " + """
+        These are localisable text for an iOS application.
         The input given to you will consist of three lines for each phrase that needs to be translated.
-        First, the phrase in """ + source_lang + """.
+        First, the key phrase in IETF """ + source_lang + """.
         Second, a comment that describes in which context the phrase is occuring in the application's UI. Make sure that the translation you provide fits this context.
-        Third, a line starting with "translation: " in which you should add your translation.
+        Third, a line starting with """ + TRANSLATION_PREFIX + """ in which you should add your translation in """ + target_language + """.
         
-        Please return only the lines starting with "translation:" with your added translation after the colon. Do not include the comments in the translations, those are only to add context.
+        Make sure the translation sounds native, and related and not gibberish.
+        
+        Please return only the lines starting with """ + TRANSLATION_PREFIX + """ with your added translation after the colon. Do not include the comments in the translations, those are only to add context.
         """
         
         if APP_CONTEXT:
@@ -217,8 +224,7 @@ def main():
         valid_response &= objects_in_this_query[valid_lines].parse_gpt_response(line, for_language=target_language)
 
         if not valid_response:
-            print("invalid line")
-            print(line)
+            print("*INVALID LINE:* " + line)
             return
 
         valid_lines += 1
@@ -231,6 +237,9 @@ def main():
     
     with open(localizable_file, "w") as f:
         f.write(json.dumps(loc, indent=2, separators=(', ', ' : '), ensure_ascii=False))
+
+    print("")
+    print("*JOB DONE:*", valid_lines, "phases localized,", "cleaning up now")
 
     try:
         shutil.rmtree(queries_directory)
